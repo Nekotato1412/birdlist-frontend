@@ -5,9 +5,9 @@ const API_URL = process.env.API_URL
 
 const CORS = require('cors')
 const winston = require('winston')
-const bcrypt = require('bcrypt')
-
-const Fetch = require('node-fetch')
+const passport = require('passport')
+const { configPassport } = require('./passportConfig,js')
+const { fromAPI } = require('./util.js')
 
 const Logger = winston.createLogger({
     level: 'info',
@@ -15,18 +15,36 @@ const Logger = winston.createLogger({
     transports: [new winston.transports.Console()]
 })
 const Express = require('express')
-const { json } = require('express')
+const { application } = require('express')
+const flash = require('express-flash')
+const session = require('express-session')
 const { loggers } = require('winston')
+
 const App = Express()
+configPassport(passport)
 
 App.use(CORS())
 App.use(Express.urlencoded({ extended: false }))
+App.use(flash())
+App.use(session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false
+}))
+App.use(passport.initialize())
+App.use(passport.session())
 
 App.set('view-engine', 'ejs')
 
 App.get('/login', (req, res) => {
     res.render('login.ejs')
 })
+
+App.post('/login', passport.authenticate('local', {
+    successRedirect: '/',
+    failureRedirect: '/login',
+    failureFlash: true
+}))
 
 App.get("/", (req, res) => {
     res.redirect("/login")
@@ -35,16 +53,12 @@ App.get("/", (req, res) => {
 
 App.listen(PORT, async () => {
     Logger.info(`Listening on port ${PORT}`)
-    try {
-        const request = await Fetch(`${API_URL}/status`)
-        const requestBody = await request.text()
-        const status = JSON.parse(requestBody)
-        if (status.online) {
-            Logger.info('Connected to API')
+        const status = await fromAPI('/status')
+        if (!status) {
+            Logger.error("Could not connect to API")
+        } else if (status.online) {
+            Logger.info("Connected to API")
         } else {
-            Logger.warn('API Maintainence.')
+            Logger.warn("API Maintainence")
         }
-    } catch {
-        Logger.error('Could not connect to API.')
-    }
 })
